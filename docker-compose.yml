@@ -1,0 +1,44 @@
+services:
+
+  api:
+    build:
+      context: .
+      target: runtime
+    container_name: project-machine-learning-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - ENV=production
+      - API_RELOAD=false
+    volumes:
+      - ./models:/app/models:ro
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  api-dev:
+    build:
+      context: .
+      target: builder
+    container_name: project-machine-learning-dev
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - ENV=development
+      - API_RELOAD=true
+    volumes:
+      - .:/app
+    command: >
+      uvicorn src.api.main:app
+      --host 0.0.0.0 --port 8000
+      --reload
+    profiles:
+      - dev
