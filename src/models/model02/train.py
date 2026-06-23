@@ -1,10 +1,10 @@
 """
-train.py — Entrenamiento, tuning y evaluación de model01
-Pipeline: TF-IDF + chi2 + SVM / Naive Bayes
+train.py — Entrenamiento, tuning y evaluación de model02
+Pipeline: TF-IDF (word+char) + chi2 + MLP
 
 Uso:
-    uv run train-model01
-    python -m src.models.model01.train
+    uv run train-model02
+    python -m src.models.model02.train
 """
 
 import logging
@@ -16,7 +16,6 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import (
     RepeatedStratifiedKFold,
     GridSearchCV,
-    cross_val_score,
     learning_curve,
 )
 from sklearn.metrics import (
@@ -28,17 +27,16 @@ from sklearn.metrics import (
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 from src.config import (
-    MODEL01_PATH,
+    MODEL02_PATH,
     LABEL_ENCODER_PATH,
     FIGURES_DIR,
     MODELS_DIR,
     CV_N_SPLITS,
     CV_N_REPEATS,
     RANDOM_STATE,
-    INTENT_LABELS,
 )
 from src.data.dataset import load_processed
-from src.models.model01.model01 import build_svm_pipeline, build_nb_pipeline
+from src.models.model02.model02 import build_mlp_pipeline
 
 # ─────────────────────────────────────────────────────────
 #  Logger
@@ -51,40 +49,24 @@ logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────
-#  Hiperparámetros a buscar con GridSearchCV
+#  Grilla de hiperparámetros
 # ─────────────────────────────────────────────────────────
-PARAM_GRID_SVM = {
-    "tfidf__max_features":  [3000, 5000, 8000],
-    "tfidf__ngram_range":   [(1, 1), (1, 2)],
-    "chi2__k":              [1000, 2000, 3000],
-    "clf__estimator__C": [0.1, 1.0, 10.0],
-}
-
-PARAM_GRID_NB = {
-    "tfidf__max_features": [3000, 5000, 8000],
-    "tfidf__ngram_range":  [(1, 1), (1, 2)],
-    "chi2__k":             [1000, 2000, 3000],
-    "clf__alpha":          [0.1, 0.5, 1.0, 2.0],
+PARAM_GRID_MLP = {
+    "features__word_tfidf__max_features": [3000, 5000],
+    "features__char_tfidf__max_features": [2000, 3000],
+    "chi2__k":                            [2000, 3000],
+    "clf__hidden_layer_sizes":            [(128, 64), (256, 128)],
+    "clf__alpha":                         [0.0001, 0.001, 0.01],
 }
 
 
 # ─────────────────────────────────────────────────────────
 #  Tuning con Repeated K-Fold CV
 # ─────────────────────────────────────────────────────────
-def tune_pipeline(pipeline, param_grid, X_train, y_train, pipeline_name: str):
+def tune_pipeline(pipeline, param_grid, X_train, y_train):
     """
     Busca los mejores hiperparámetros con GridSearchCV
-    usando RepeatedStratifiedKFold (exigido por la rúbrica).
-
-    Args:
-        pipeline     : pipeline sklearn a tunear
-        param_grid   : grilla de hiperparámetros
-        X_train      : textos de entrenamiento
-        y_train      : labels de entrenamiento
-        pipeline_name: nombre para logging
-
-    Returns:
-        GridSearchCV ajustado
+    usando RepeatedStratifiedKFold (10×10).
     """
     cv = RepeatedStratifiedKFold(
         n_splits=CV_N_SPLITS,
@@ -92,23 +74,24 @@ def tune_pipeline(pipeline, param_grid, X_train, y_train, pipeline_name: str):
         random_state=RANDOM_STATE,
     )
 
-    logger.info(f"Iniciando GridSearchCV para {pipeline_name}...")
-    logger.info(f"CV: {CV_N_REPEATS} repeticiones × {CV_N_SPLITS} folds")
-    logger.info(f"Combinaciones a probar: {_count_combinations(param_grid)}")
+    total = 1
+    for v in param_grid.values():
+        total *= len(v)
+
+    logger.info(f"Iniciando GridSearchCV MLP — {total} combinaciones × {CV_N_REPEATS}×{CV_N_SPLITS} CV")
 
     search = GridSearchCV(
         estimator=pipeline,
         param_grid=param_grid,
         cv=cv,
-        scoring="f1_macro",      # métrica principal: F1 macro (multiclase)
-        n_jobs=-1,               # usar todos los cores disponibles
+        scoring="f1_macro",
+        n_jobs=-1,
         verbose=1,
-        refit=True,              # re-entrena con mejores params en todo X_train
+        refit=True,
     )
-
     search.fit(X_train, y_train)
 
-    logger.info(f"✓ Mejores hiperparámetros ({pipeline_name}):")
+    logger.info("✓ Mejores hiperparámetros MLP:")
     for param, value in search.best_params_.items():
         logger.info(f"    {param}: {value}")
     logger.info(f"  Mejor F1-macro (CV): {search.best_score_:.4f}")
@@ -116,31 +99,12 @@ def tune_pipeline(pipeline, param_grid, X_train, y_train, pipeline_name: str):
     return search
 
 
-def _count_combinations(param_grid: dict) -> int:
-    """Cuenta el número total de combinaciones en la grilla."""
-    total = 1
-    for values in param_grid.values():
-        total *= len(values)
-    return total
-
-
 # ─────────────────────────────────────────────────────────
-#  Curva de aprendizaje (rúbrica)
+#  Curva de aprendizaje
 # ─────────────────────────────────────────────────────────
-def plot_learning_curve(pipeline, X_train, y_train, model_name: str = "model01") -> None:
-    """
-    Genera y guarda la curva de aprendizaje.
-    Muestra si el modelo tiene bias o variance alto.
-
-    Args:
-        pipeline  : pipeline sklearn con mejores hiperparámetros
-        X_train   : textos de entrenamiento
-        y_train   : labels de entrenamiento
-        model_name: nombre para el archivo de figura
-    """
-    cv = RepeatedStratifiedKFold(
-        n_splits=5, n_repeats=3, random_state=RANDOM_STATE
-    )
+def plot_learning_curve(pipeline, X_train, y_train, model_name: str = "model02") -> None:
+    """Genera y guarda la curva de aprendizaje."""
+    cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=3, random_state=RANDOM_STATE)
 
     train_sizes, train_scores, val_scores = learning_curve(
         pipeline, X_train, y_train,
@@ -189,19 +153,8 @@ def plot_learning_curve(pipeline, X_train, y_train, model_name: str = "model01")
 #  Evaluación final
 # ─────────────────────────────────────────────────────────
 def evaluate(pipeline, X_test, y_test, label_encoder) -> dict:
-    """
-    Evalúa el pipeline en el conjunto de test.
-
-    Args:
-        pipeline     : pipeline sklearn entrenado
-        X_test       : textos de prueba
-        y_test       : labels de prueba
-        label_encoder: para decodificar índices a nombres
-
-    Returns:
-        Dict con métricas de evaluación
-    """
-    y_pred = pipeline.predict(X_test)
+    """Evalúa el pipeline en el conjunto de test."""
+    y_pred     = pipeline.predict(X_test)
     class_names = label_encoder.classes_
 
     report = classification_report(
@@ -211,21 +164,19 @@ def evaluate(pipeline, X_test, y_test, label_encoder) -> dict:
     )
 
     print("\n" + "=" * 60)
-    print("EVALUACIÓN EN TEST SET — MODEL01")
+    print("EVALUACIÓN EN TEST SET — MODEL02")
     print("=" * 60)
     print(classification_report(y_test, y_pred, target_names=class_names))
 
-    # Matriz de confusión
     fig, ax = plt.subplots(figsize=(10, 8))
-    cm = confusion_matrix(y_test, y_pred)
+    cm   = confusion_matrix(y_test, y_pred)
     disp = ConfusionMatrixDisplay(cm, display_labels=class_names)
     disp.plot(ax=ax, colorbar=True, cmap="Blues")
-    ax.set_title("Matriz de Confusión — Model01", fontsize=13, fontweight="bold")
+    ax.set_title("Matriz de Confusión — Model02", fontsize=13, fontweight="bold")
     plt.xticks(rotation=45, ha="right")
     plt.tight_layout()
 
-    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
-    path = FIGURES_DIR / "confusion_matrix_model01.png"
+    path = FIGURES_DIR / "confusion_matrix_model02.png"
     plt.savefig(path, dpi=150, bbox_inches="tight")
     logger.info(f"✓ Matriz de confusión guardada: {path}")
     plt.show()
@@ -234,64 +185,37 @@ def evaluate(pipeline, X_test, y_test, label_encoder) -> dict:
 
 
 # ─────────────────────────────────────────────────────────
-#  Entrypoint principal
+#  Entrypoint
 # ─────────────────────────────────────────────────────────
 def main():
     logger.info("=" * 55)
-    logger.info("ENTRENAMIENTO MODEL01 — TF-IDF + chi2 + SVM/NB")
+    logger.info("ENTRENAMIENTO MODEL02 — TF-IDF (word+char) + MLP")
     logger.info("=" * 55)
 
-    # 1. Cargar datos procesados
+    # 1. Cargar datos
     X_train, X_test, y_train, y_test, le = load_processed()
 
-    # ── SVM ──────────────────────────────────────────────
-    logger.info("\n[1/2] Tuning SVM pipeline...")
-    svm_search = tune_pipeline(
-        pipeline=build_svm_pipeline(),
-        param_grid=PARAM_GRID_SVM,
+    # 2. Tuning
+    search = tune_pipeline(
+        pipeline=build_mlp_pipeline(),
+        param_grid=PARAM_GRID_MLP,
         X_train=X_train,
         y_train=y_train,
-        pipeline_name="SVM",
     )
-    best_svm = svm_search.best_estimator_
+    best_pipeline = search.best_estimator_
 
-    # ── Naive Bayes ───────────────────────────────────────
-    logger.info("\n[2/2] Tuning Naive Bayes pipeline...")
-    nb_search = tune_pipeline(
-        pipeline=build_nb_pipeline(),
-        param_grid=PARAM_GRID_NB,
-        X_train=X_train,
-        y_train=y_train,
-        pipeline_name="NaiveBayes",
-    )
-    best_nb = nb_search.best_estimator_
-
-    # ── Seleccionar el mejor entre SVM y NB ───────────────
-    logger.info("\nComparando SVM vs NaiveBayes...")
-    logger.info(f"  SVM  F1-macro CV: {svm_search.best_score_:.4f}")
-    logger.info(f"  NB   F1-macro CV: {nb_search.best_score_:.4f}")
-
-    if svm_search.best_score_ >= nb_search.best_score_:
-        best_pipeline = best_svm
-        best_name = "SVM"
-    else:
-        best_pipeline = best_nb
-        best_name = "NaiveBayes"
-
-    logger.info(f"✓ Mejor modelo seleccionado: {best_name}")
-
-    # ── Curva de aprendizaje ──────────────────────────────
+    # 3. Curva de aprendizaje
     logger.info("\nGenerando curva de aprendizaje...")
-    plot_learning_curve(best_pipeline, X_train, y_train, model_name="model01")
+    plot_learning_curve(best_pipeline, X_train, y_train, model_name="model02")
 
-    # ── Evaluación en test ────────────────────────────────
+    # 4. Evaluación en test
     logger.info("\nEvaluando en test set...")
     evaluate(best_pipeline, X_test, y_test, le)
 
-    # ── Guardar modelo ────────────────────────────────────
+    # 5. Guardar modelo
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    joblib.dump(best_pipeline, MODEL01_PATH)
-    logger.info(f"\n✓ Model01 guardado en: {MODEL01_PATH}")
+    joblib.dump(best_pipeline, MODEL02_PATH)
+    logger.info(f"\n✓ Model02 guardado en: {MODEL02_PATH}")
 
 
 if __name__ == "__main__":

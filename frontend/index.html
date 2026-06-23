@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Geo-Intent Classifier</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <div class="container">
+
+    <!-- Header -->
+    <header>
+      <div class="header-icon">🌍</div>
+      <h1>Geo-Intent Classifier</h1>
+      <p class="subtitle">Clasificador de intención para agente geoespacial</p>
+    </header>
+
+    <!-- Input -->
+    <section class="input-section">
+      <div class="input-wrapper">
+        <textarea
+          id="text-input"
+          placeholder="Escribe una instrucción geoespacial... ej: muéstrame las capas disponibles"
+          rows="3"
+          maxlength="500"
+        ></textarea>
+        <span class="char-count"><span id="char-count">0</span>/500</span>
+      </div>
+
+      <div class="controls">
+        <!-- Selector de modelo -->
+        <div class="model-selector">
+          <label for="model-select">Modelo</label>
+          <select id="model-select">
+            <option value="model01">Model 01 — TF-IDF + SVM</option>
+            <option value="model02">Model 02 — TF-IDF + MLP</option>
+          </select>
+        </div>
+
+        <!-- Botones -->
+        <div class="buttons">
+          <button id="mic-btn" class="btn btn-mic" title="Hablar">
+            <span class="mic-icon">🎙️</span>
+            <span class="mic-label">Hablar</span>
+          </button>
+          <button id="predict-btn" class="btn btn-predict">
+            Clasificar →
+          </button>
+        </div>
+      </div>
+
+      <!-- Estado del micrófono -->
+      <div id="mic-status" class="mic-status hidden">
+        <span class="pulse"></span> Escuchando...
+      </div>
+    </section>
+
+    <!-- Resultado -->
+    <section id="result-section" class="result-section hidden">
+      <h2>Resultado</h2>
+
+      <div class="result-card">
+        <div class="result-row">
+          <span class="result-label">Intent detectado</span>
+          <span id="result-intent" class="result-intent-badge">—</span>
+        </div>
+
+        <div class="result-row">
+          <span class="result-label">Confianza</span>
+          <div class="confidence-bar-wrapper">
+            <div class="confidence-bar">
+              <div id="confidence-fill" class="confidence-fill"></div>
+            </div>
+            <span id="confidence-value" class="confidence-value">—</span>
+          </div>
+        </div>
+
+        <div class="result-row">
+          <span class="result-label">Agente destino</span>
+          <span id="result-agent" class="agent-badge">—</span>
+        </div>
+
+        <div class="result-row">
+          <span class="result-label">Modelo usado</span>
+          <span id="result-model" class="model-badge">—</span>
+        </div>
+
+        <div class="result-row">
+          <span class="result-label">Texto recibido</span>
+          <span id="result-text" class="result-text">—</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Error -->
+    <div id="error-banner" class="error-banner hidden">
+      <span id="error-message"></span>
+    </div>
+
+    <!-- Footer -->
+    <footer>
+      <span>project-machine-learning · Python 3.12 · FastAPI</span>
+      <a href="/docs" target="_blank">API Docs →</a>
+    </footer>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

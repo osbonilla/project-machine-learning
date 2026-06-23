@@ -57,7 +57,7 @@ MODEL01_PATH        = MODELS_DIR / "model01.pkl"
 MODEL02_PATH        = MODELS_DIR / "model02.pkl"
 LABEL_ENCODER_PATH  = MODELS_DIR / "label_encoder.pkl"
 
-ACTIVE_MODEL = os.getenv("ACTIVE_MODEL", "model01")
+ACTIVE_MODEL = os.getenv("ACTIVE_MODEL", "model02")
 
 MODEL_PATHS = {
     "model01": MODEL01_PATH,

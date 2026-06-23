@@ -13,32 +13,27 @@ dependencies = [
     "scikit-learn>=1.5",
     "joblib>=1.4",
     "scipy>=1.13",
-
     # ── NLP ─────────────────────────────────────────
     "nltk>=3.8",
     "spacy>=3.7",
-
     # ── Embeddings ───────────────────────────────────
     #"sentence-transformers>=3.0",
-
     # ── Generación de datos (GROQ) ───────────────────
     "groq>=0.9",
     "python-dotenv>=1.0",
-
     # ── API ─────────────────────────────────────────
     "fastapi>=0.111",
     "uvicorn[standard]>=0.30",
     "pydantic>=2.7",
     "python-multipart>=0.0.9",
-
     # ── Visualización ────────────────────────────────
     "matplotlib>=3.9",
     "seaborn>=0.13",
     "plotly>=5.22",
-
     # ── Notebooks ────────────────────────────────────
     "jupyter>=1.0",
     "ipykernel>=6.29",
+    "optuna>=4.9.0",
 ]
 
 [project.optional-dependencies]
