@@ -82,8 +82,8 @@ Usuario (texto o voz)
 ┌───────────────────────────────────┐
 │  Clasificador de Intención        │
 │                                   │
-│  Model01: TF-IDF + chi² + SVM    │  ← F1-macro: 0.96
-│  Model02: TF-IDF + chi² + MLP    │  ← más robusto con texto crudo
+│  Model01: TF-IDF + chi² + SVM     │  ← F1-macro: 0.96
+│  Model02: TF-IDF + chi² + MLP     │  ← más robusto con texto crudo
 └────────┬──────────────────────────┘
          │
          ▼
