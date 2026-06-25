@@ -3,11 +3,12 @@ preprocess.py — Limpieza y normalización del corpus de texto
 Lee intents_raw.jsonl y produce intents_clean.jsonl
 
 Pasos:
-    1. Minúsculas
-    2. Eliminar caracteres especiales y puntuación
-    3. Normalizar espacios
-    4. Eliminar stopwords (spaCy)
-    5. Lematización (spaCy)
+    1. Eliminar numeración al inicio de la frase
+    2. Minúsculas
+    3. Eliminar caracteres especiales y puntuación
+    4. Normalizar espacios
+    5. Eliminar stopwords (spaCy)
+    6. Lematización (spaCy)
 
 Uso:
     from src.data.preprocess import clean_text, preprocess_corpus
@@ -37,9 +38,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 # ─────────────────────────────────────────────────────────
 #  Cargar modelo spaCy
-#  Requiere: uv run python -m spacy download es_core_news_sm
 # ─────────────────────────────────────────────────────────
 def load_spacy_model():
     """Carga el modelo de spaCy para español."""
@@ -63,6 +64,7 @@ def normalize_text(text: str) -> str:
     Normalización básica antes de pasar por spaCy.
 
     Pasos:
+        - Eliminar numeración al inicio: "18. texto" → "texto"
         - Minúsculas
         - Eliminar caracteres especiales (conserva letras, números y espacios)
         - Normalizar espacios múltiples
@@ -73,6 +75,9 @@ def normalize_text(text: str) -> str:
     Returns:
         texto normalizado
     """
+    # Eliminar numeración al inicio de la frase: "18. texto" o "18) texto" → "texto"
+    text = re.sub(r'^\d+[\.\)]\s*', '', text)
+
     # Minúsculas
     text = text.lower()
 
@@ -138,17 +143,14 @@ def preprocess_corpus() -> list[dict]:
     Returns:
         Lista de dicts con texto limpio y tokens
     """
-    # Verificar que existe el archivo crudo
     if not RAW_DATA_PATH.exists():
         raise FileNotFoundError(
             f"No se encontró: {RAW_DATA_PATH}\n"
             "Ejecuta primero: uv run generate-data"
         )
 
-    # Cargar modelo spaCy
     nlp = load_spacy_model()
 
-    # Leer corpus crudo
     raw_records = []
     with open(RAW_DATA_PATH, "r", encoding="utf-8") as f:
         for line in f:
@@ -158,30 +160,27 @@ def preprocess_corpus() -> list[dict]:
 
     logger.info(f"Registros crudos cargados: {len(raw_records)}")
 
-    # Limpiar cada registro
     clean_records = []
     skipped = 0
 
     for i, record in enumerate(raw_records):
-        raw_text  = record["text"]
-        intent    = record["intent"]
+        raw_text = record["text"]
+        intent   = record["intent"]
 
-        # Limpiar
-        clean    = clean_text(raw_text, nlp)
-        tokens   = clean.split()
+        clean  = clean_text(raw_text, nlp)
+        tokens = clean.split()
 
-        # Filtrar textos que quedaron muy cortos después de limpiar
         if len(tokens) < 2:
             skipped += 1
             logger.debug(f"Texto descartado (muy corto): '{raw_text}' → '{clean}'")
             continue
 
         clean_records.append({
-            "text":       clean,         # texto lematizado
-            "text_raw":   raw_text,      # texto original (útil para EDA)
-            "tokens":     tokens,        # lista de tokens
-            "n_tokens":   len(tokens),   # longitud en tokens
-            "intent":     intent,
+            "text":     clean,      # texto lematizado
+            "text_raw": raw_text,   # texto original
+            "tokens":   tokens,     # lista de tokens
+            "n_tokens": len(tokens),
+            "intent":   intent,
         })
 
         if (i + 1) % 100 == 0:
@@ -191,7 +190,6 @@ def preprocess_corpus() -> list[dict]:
     logger.info(f"  Total procesados : {len(clean_records)}")
     logger.info(f"  Descartados      : {skipped} (texto muy corto tras limpieza)")
 
-    # Guardar corpus limpio
     INTERIM_DIR.mkdir(parents=True, exist_ok=True)
 
     with open(CLEAN_DATA_PATH, "w", encoding="utf-8") as f:
@@ -229,7 +227,6 @@ def main():
 
     clean_records = preprocess_corpus()
 
-    # Mostrar ejemplos
     raw_records = []
     with open(RAW_DATA_PATH, "r", encoding="utf-8") as f:
         for line in f:

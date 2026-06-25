@@ -1,0 +1,2 @@
+svm_best_score,nb_best_score,best_classifier,svm_best_params,nb_best_params
+0.9004521801880793,0.8921076577029935,SVM,"{'chi2__k': 1000, 'clf__estimator__C': 1.0, 'tfidf__max_features': 3000, 'tfidf__ngram_range': (1, 2)}","{'chi2__k': 1000, 'clf__alpha': 0.1, 'tfidf__max_features': 3000, 'tfidf__ngram_range': (1, 2)}"

@@ -1,0 +1,2 @@
+mlp_best_score,mlp_best_params
+0.8868953004611471,"{'chi2__k': 2000, 'clf__alpha': 0.001, 'clf__hidden_layer_sizes': (128, 64), 'features__char_tfidf__max_features': 2000, 'features__word_tfidf__max_features': 3000}"

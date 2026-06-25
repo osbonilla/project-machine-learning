@@ -9,6 +9,7 @@ Uso:
 
 import logging
 import joblib
+import pandas as pd
 from pathlib import Path
 
 import numpy as np
@@ -57,7 +58,7 @@ PARAM_GRID_SVM = {
     "tfidf__max_features":  [3000, 5000, 8000],
     "tfidf__ngram_range":   [(1, 1), (1, 2)],
     "chi2__k":              [1000, 2000, 3000],
-    "clf__estimator__C": [0.1, 1.0, 10.0],
+    "clf__estimator__C":    [0.1, 1.0, 10.0],
 }
 
 PARAM_GRID_NB = {
@@ -75,16 +76,6 @@ def tune_pipeline(pipeline, param_grid, X_train, y_train, pipeline_name: str):
     """
     Busca los mejores hiperparámetros con GridSearchCV
     usando RepeatedStratifiedKFold (exigido por la rúbrica).
-
-    Args:
-        pipeline     : pipeline sklearn a tunear
-        param_grid   : grilla de hiperparámetros
-        X_train      : textos de entrenamiento
-        y_train      : labels de entrenamiento
-        pipeline_name: nombre para logging
-
-    Returns:
-        GridSearchCV ajustado
     """
     cv = RepeatedStratifiedKFold(
         n_splits=CV_N_SPLITS,
@@ -100,10 +91,10 @@ def tune_pipeline(pipeline, param_grid, X_train, y_train, pipeline_name: str):
         estimator=pipeline,
         param_grid=param_grid,
         cv=cv,
-        scoring="f1_macro",      # métrica principal: F1 macro (multiclase)
-        n_jobs=-1,               # usar todos los cores disponibles
+        scoring="f1_macro",
+        n_jobs=-1,
         verbose=1,
-        refit=True,              # re-entrena con mejores params en todo X_train
+        refit=True,
     )
 
     search.fit(X_train, y_train)
@@ -125,19 +116,10 @@ def _count_combinations(param_grid: dict) -> int:
 
 
 # ─────────────────────────────────────────────────────────
-#  Curva de aprendizaje (rúbrica)
+#  Curva de aprendizaje
 # ─────────────────────────────────────────────────────────
 def plot_learning_curve(pipeline, X_train, y_train, model_name: str = "model01") -> None:
-    """
-    Genera y guarda la curva de aprendizaje.
-    Muestra si el modelo tiene bias o variance alto.
-
-    Args:
-        pipeline  : pipeline sklearn con mejores hiperparámetros
-        X_train   : textos de entrenamiento
-        y_train   : labels de entrenamiento
-        model_name: nombre para el archivo de figura
-    """
+    """Genera y guarda la curva de aprendizaje."""
     cv = RepeatedStratifiedKFold(
         n_splits=5, n_repeats=3, random_state=RANDOM_STATE
     )
@@ -189,18 +171,7 @@ def plot_learning_curve(pipeline, X_train, y_train, model_name: str = "model01")
 #  Evaluación final
 # ─────────────────────────────────────────────────────────
 def evaluate(pipeline, X_test, y_test, label_encoder) -> dict:
-    """
-    Evalúa el pipeline en el conjunto de test.
-
-    Args:
-        pipeline     : pipeline sklearn entrenado
-        X_test       : textos de prueba
-        y_test       : labels de prueba
-        label_encoder: para decodificar índices a nombres
-
-    Returns:
-        Dict con métricas de evaluación
-    """
+    """Evalúa el pipeline en el conjunto de test."""
     y_pred = pipeline.predict(X_test)
     class_names = label_encoder.classes_
 
@@ -215,7 +186,6 @@ def evaluate(pipeline, X_test, y_test, label_encoder) -> dict:
     print("=" * 60)
     print(classification_report(y_test, y_pred, target_names=class_names))
 
-    # Matriz de confusión
     fig, ax = plt.subplots(figsize=(10, 8))
     cm = confusion_matrix(y_test, y_pred)
     disp = ConfusionMatrixDisplay(cm, display_labels=class_names)
@@ -255,6 +225,12 @@ def main():
     )
     best_svm = svm_search.best_estimator_
 
+    # Guardar resultados del CV para graficar en el notebook
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    cv_results_svm = pd.DataFrame(svm_search.cv_results_)
+    cv_results_svm.to_csv(MODELS_DIR / "cv_results_model01.csv", index=False)
+    logger.info(f"✓ Resultados CV-SVM guardados en: {MODELS_DIR / 'cv_results_model01.csv'}")
+
     # ── Naive Bayes ───────────────────────────────────────
     logger.info("\n[2/2] Tuning Naive Bayes pipeline...")
     nb_search = tune_pipeline(
@@ -265,6 +241,11 @@ def main():
         pipeline_name="NaiveBayes",
     )
     best_nb = nb_search.best_estimator_
+
+    # Guardar resultados del CV de NB también
+    cv_results_nb = pd.DataFrame(nb_search.cv_results_)
+    cv_results_nb.to_csv(MODELS_DIR / "cv_results_nb.csv", index=False)
+    logger.info(f"✓ Resultados CV-NB guardados en: {MODELS_DIR / 'cv_results_nb.csv'}")
 
     # ── Seleccionar el mejor entre SVM y NB ───────────────
     logger.info("\nComparando SVM vs NaiveBayes...")
@@ -280,6 +261,23 @@ def main():
 
     logger.info(f"✓ Mejor modelo seleccionado: {best_name}")
 
+    # Guardar el nombre del mejor clasificador
+    with open(MODELS_DIR / "best_model01_name.txt", "w") as f:
+        f.write(best_name)
+
+    # Guardar scores finales para el notebook
+    scores_summary = {
+        "svm_best_score":  svm_search.best_score_,
+        "nb_best_score":   nb_search.best_score_,
+        "best_classifier": best_name,
+        "svm_best_params": str(svm_search.best_params_),
+        "nb_best_params":  str(nb_search.best_params_),
+    }
+    pd.DataFrame([scores_summary]).to_csv(
+        MODELS_DIR / "model01_summary.csv", index=False
+    )
+    logger.info(f"✓ Resumen guardado en: {MODELS_DIR / 'model01_summary.csv'}")
+
     # ── Curva de aprendizaje ──────────────────────────────
     logger.info("\nGenerando curva de aprendizaje...")
     plot_learning_curve(best_pipeline, X_train, y_train, model_name="model01")
@@ -289,7 +287,6 @@ def main():
     evaluate(best_pipeline, X_test, y_test, le)
 
     # ── Guardar modelo ────────────────────────────────────
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
     joblib.dump(best_pipeline, MODEL01_PATH)
     logger.info(f"\n✓ Model01 guardado en: {MODEL01_PATH}")
 

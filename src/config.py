@@ -160,9 +160,12 @@ NUM_CLASSES    = len(INTENT_LABELS)
 # ─────────────────────────────────────────────────────────
 #  Parámetros de generación de datos
 # ─────────────────────────────────────────────────────────
-UTTERANCES_PER_INTENT = 80   # utterances a generar por cada intent
-UTTERANCES_PER_BATCH  = 20   # cuántos pedir a GROQ por llamada (evita timeouts)
-GENERATION_TEMPERATURE = 0.85
+GROQ_UTTERANCES_PER_INTENT   = int(os.getenv("GROQ_UTTERANCES_PER_INTENT", "100"))
+OLLAMA_UTTERANCES_PER_INTENT = int(os.getenv("OLLAMA_UTTERANCES_PER_INTENT", "50"))
+UTTERANCES_PER_BATCH         = int(os.getenv("UTTERANCES_PER_BATCH", "25"))
+GENERATION_TEMPERATURE       = float(os.getenv("GENERATION_TEMPERATURE", "0.85"))
+OLLAMA_URL                   = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
+OLLAMA_MODEL                 = os.getenv("OLLAMA_MODEL", "mistral")
 
 # ─────────────────────────────────────────────────────────
 #  Parámetros de entrenamiento

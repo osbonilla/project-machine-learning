@@ -5,13 +5,32 @@ GET  /health   → estado del servicio
 WS   /speech   → flujo de voz en tiempo real (plus)
 """
 
+import re
 import logging
+import spacy
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from src.api.schemas import IntentRequest, IntentResponse, HealthResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Cargar modelo spaCy una sola vez al iniciar (no en cada request)
+nlp = spacy.load("es_core_news_sm")
+
+
+def preprocess_text(text: str) -> str:
+    """Aplica el mismo preprocesamiento usado durante el entrenamiento."""
+    text = text.lower()
+    text = re.sub(r"[^a-záéíóúüñà-ÿ0-9\s]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    doc  = nlp(text)
+    tokens = [
+        token.lemma_ for token in doc
+        if not token.is_stop and not token.is_punct
+        and not token.is_space and len(token.lemma_) > 1
+    ]
+    return " ".join(tokens)
 
 
 # ─────────────────────────────────────────────────────────
@@ -35,14 +54,16 @@ async def predict_intent(request: IntentRequest):
         else:
             from src.models.model02.predict import predict
 
-        result = predict(request.text)
+        # Preprocesar el texto antes de clasificar
+        clean = preprocess_text(request.text)
+        result = predict(clean)
 
         return IntentResponse(
             intent=result["intent"],
             confidence=result["confidence"],
             agent=result["agent"],
             model=result["model"],
-            text=request.text,
+            text=request.text,  # devolver el texto original al usuario
         )
 
     except FileNotFoundError as e:
@@ -93,8 +114,9 @@ async def speech_endpoint(websocket: WebSocket):
                 continue
 
             try:
-                from src.models.model01.predict import predict
-                result = predict(text)
+                from src.models.model02.predict import predict
+                clean  = preprocess_text(text)
+                result = predict(clean)
                 await websocket.send_json({
                     "text":       text,
                     "intent":     result["intent"],

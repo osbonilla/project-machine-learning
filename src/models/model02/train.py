@@ -9,6 +9,7 @@ Uso:
 
 import logging
 import joblib
+import pandas as pd
 from pathlib import Path
 
 import numpy as np
@@ -154,7 +155,7 @@ def plot_learning_curve(pipeline, X_train, y_train, model_name: str = "model02")
 # ─────────────────────────────────────────────────────────
 def evaluate(pipeline, X_test, y_test, label_encoder) -> dict:
     """Evalúa el pipeline en el conjunto de test."""
-    y_pred     = pipeline.predict(X_test)
+    y_pred      = pipeline.predict(X_test)
     class_names = label_encoder.classes_
 
     report = classification_report(
@@ -176,6 +177,7 @@ def evaluate(pipeline, X_test, y_test, label_encoder) -> dict:
     plt.xticks(rotation=45, ha="right")
     plt.tight_layout()
 
+    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     path = FIGURES_DIR / "confusion_matrix_model02.png"
     plt.savefig(path, dpi=150, bbox_inches="tight")
     logger.info(f"✓ Matriz de confusión guardada: {path}")
@@ -204,6 +206,22 @@ def main():
     )
     best_pipeline = search.best_estimator_
 
+    # Guardar resultados del CV para el notebook
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    cv_results_mlp = pd.DataFrame(search.cv_results_)
+    cv_results_mlp.to_csv(MODELS_DIR / "cv_results_model02.csv", index=False)
+    logger.info(f"✓ Resultados CV-MLP guardados en: {MODELS_DIR / 'cv_results_model02.csv'}")
+
+    # Guardar resumen
+    scores_summary = {
+        "mlp_best_score":  search.best_score_,
+        "mlp_best_params": str(search.best_params_),
+    }
+    pd.DataFrame([scores_summary]).to_csv(
+        MODELS_DIR / "model02_summary.csv", index=False
+    )
+    logger.info(f"✓ Resumen guardado en: {MODELS_DIR / 'model02_summary.csv'}")
+
     # 3. Curva de aprendizaje
     logger.info("\nGenerando curva de aprendizaje...")
     plot_learning_curve(best_pipeline, X_train, y_train, model_name="model02")
@@ -213,7 +231,6 @@ def main():
     evaluate(best_pipeline, X_test, y_test, le)
 
     # 5. Guardar modelo
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
     joblib.dump(best_pipeline, MODEL02_PATH)
     logger.info(f"\n✓ Model02 guardado en: {MODEL02_PATH}")
 

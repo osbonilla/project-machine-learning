@@ -66,8 +66,8 @@ Usuario (texto o voz)
         │
         ▼
 ┌───────────────────┐
-│  Frontend (Plus)  │  ← visor web con Web Speech API
-│  index.html       │
+│     Frontend      │  ← visor web con Web Speech API
+│     index.html    │
 └────────┬──────────┘
          │  HTTP POST /predict
          ▼
@@ -79,12 +79,12 @@ Usuario (texto o voz)
 └────────┬──────────┘
          │
          ▼
-┌───────────────────────────────────┐
-│  Clasificador de Intención        │
-│                                   │
-│  Model01: TF-IDF + chi² + SVM     │  ← F1-macro: 0.96
-│  Model02: TF-IDF + chi² + MLP     │  ← más robusto con texto crudo
-└────────┬──────────────────────────┘
+┌────────────────────────────────┐
+│  Clasificador de Intención     │
+│                                │
+│  Model01: TF-IDF + chi² + SVM  │  ← F1-macro: 0.96
+│  Model02: TF-IDF + chi² + MLP  │  ← más robusto con texto crudo
+└────────┬───────────────────────┘
          │
          ▼
    Agente Geoespacial
