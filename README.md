@@ -25,9 +25,9 @@ Curso: Machine Learning (Aprendizaje de Máquina) — 2026
 - [Decisiones técnicas](#-decisiones-técnicas)
 - [Estructura del proyecto](#-estructura-del-proyecto)
 - [Flujo de trabajo completo](#-flujo-de-trabajo-completo)
-- [Instalación](#-instalación)
+- [Instalación y comandos](#-instalación-y-comandos)
 - [Pipeline de datos](#-pipeline-de-datos)
-- [Modelos](#-modelos)
+- [Modelos y justificación](#-modelos-y-justificación)
 - [Resultados](#-resultados)
 - [API](#-api)
 - [Frontend](#-frontend)
@@ -82,12 +82,12 @@ Usuario (texto o voz)
          │  preprocess_text() → spaCy
          │  predict() → model.pkl
          ▼
-┌──────────────────────────────────────┐
-│  Clasificador de Intención           │
-│                                      │
+┌─────────────────────────────────────┐
+│  Clasificador de Intención          │
+│                                     │
 │  Model01: TF-IDF + chi² + SVM       │  ← F1-macro: 0.96 (texto preprocesado)
 │  Model02: TF-IDF + chi² + MLP       │  ← F1-macro: 0.88 (más robusto en producción)
-└────────┬─────────────────────────────┘
+└────────┬────────────────────────────┘
          │
          ▼
    Agente Geoespacial (geo_agent)
@@ -97,6 +97,27 @@ Usuario (texto o voz)
 ---
 
 ## ⚙️ Decisiones técnicas
+
+### ¿Qué es TF-IDF?
+
+**TF-IDF** (Term Frequency — Inverse Document Frequency) es el método que convierte texto en números que el modelo puede procesar. Asigna un peso numérico a cada palabra según dos criterios:
+
+- **TF (Term Frequency):** qué tan frecuente es la palabra en ese documento
+- **IDF (Inverse Document Frequency):** qué tan rara es la palabra en todo el corpus
+
+```
+Palabra "buffer" → aparece mucho en buffer_analysis, poco en el resto → peso ALTO
+Palabra "de"    → aparece en todos los documentos por igual        → peso BAJO
+```
+
+El resultado es una **matriz numérica** donde cada fila es un utterance y cada columna es un término del vocabulario. Los modelos ML trabajan sobre esta matriz, no sobre el texto directamente.
+
+Con `ngram_range=(1,2)` también captura **bigramas** — pares de palabras consecutivas:
+
+```
+"calcular área" → una sola feature que distingue calculate_area de otros intents
+"exportar shapefile" → feature única de export_data
+```
 
 ### ¿Por qué `uv` en lugar de `pip`?
 
@@ -166,113 +187,85 @@ project-machine-learning/
 │
 ├── src/                    # Código fuente modular del proyecto
 │   ├── config.py           # Centraliza TODOS los paths, constantes e intents
-│   │                       # Ningún otro módulo hardcodea paths — siempre importa de aquí
 │   │
 │   ├── data/
-│   │   ├── generator.py    # Genera utterances usando GROQ API (LLaMA 3.3 70B) +
-│   │   │                   # Mistral local (Ollama). Produce intents_raw.jsonl
-│   │   ├── preprocess.py   # Limpia cada utterance: elimina numeración → minúsculas →
-│   │   │                   # regex → lematización spaCy → eliminar stopwords
-│   │   └── dataset.py      # Carga el corpus limpio, codifica labels con LabelEncoder,
-│   │                       # hace split estratificado 80/20 y guarda los .pkl
+│   │   ├── generator.py    # Genera utterances usando GROQ API + Mistral (Ollama)
+│   │   ├── preprocess.py   # Limpia: numeración → minúsculas → regex → spaCy
+│   │   └── dataset.py      # Split estratificado 80/20 y guarda los .pkl
 │   │
 │   ├── features/
-│   │   ├── extraction.py   # Implementa BoW, TF-IDF y TF-IDF+ngrams para comparar
-│   │   │                   # representaciones en el notebook de EDA
-│   │   └── selection.py    # Implementa chi², mutual info y variance threshold
-│   │                       # como métodos filter de selección de features
+│   │   ├── extraction.py   # BoW, TF-IDF y TF-IDF+ngrams para comparar en notebook
+│   │   └── selection.py    # chi², mutual info y variance threshold (métodos filter)
 │   │
 │   ├── models/
 │   │   ├── model01/        # Pipeline baseline: TF-IDF + chi² + SVM/NB
 │   │   │   ├── model01.py  # Define build_svm_pipeline() y build_nb_pipeline()
-│   │   │   ├── train.py    # Entrena con GridSearchCV + RepeatedKFold(10×10),
-│   │   │   │               # guarda cv_results_model01.csv y model01.pkl
-│   │   │   ├── predict.py  # Carga model01.pkl → predict(text) → {intent, confidence}
-│   │   │   └── dataloader.py # Carga X_train/test.pkl para el entrenamiento
-│   │   │
+│   │   │   ├── train.py    # GridSearchCV + RepeatedKFold(10×10) → model01.pkl
+│   │   │   ├── predict.py  # predict(text) → {intent, confidence, agent}
+│   │   │   └── dataloader.py
 │   │   └── model02/        # Pipeline avanzado: TF-IDF(word+char) + chi² + MLP
 │   │       ├── model02.py  # Define build_mlp_pipeline() con FeatureUnion
-│   │       ├── train.py    # Entrena con GridSearchCV + RepeatedKFold(10×10),
-│   │       │               # guarda cv_results_model02.csv y model02.pkl
-│   │       ├── predict.py  # Carga model02.pkl → predict(text) → {intent, confidence}
-│   │       └── dataloader.py # Carga X_train/test.pkl para el entrenamiento
+│   │       ├── train.py    # GridSearchCV + RepeatedKFold(10×10) → model02.pkl
+│   │       ├── predict.py  # predict(text) → {intent, confidence, agent}
+│   │       └── dataloader.py
 │   │
 │   ├── api/
-│   │   ├── main.py         # App FastAPI: carga modelos al iniciar (lifespan),
-│   │   │                   # registra routers y sirve frontend/ como archivos estáticos
-│   │   ├── routes.py       # Define los endpoints: POST /predict (con preprocesamiento
-│   │   │                   # spaCy), GET /health, WebSocket /speech
-│   │   ├── schemas.py      # Modelos Pydantic: IntentRequest, IntentResponse, HealthResponse
-│   │   └── middleware.py   # CORS (permite llamadas desde el browser/frontend)
-│   │                       # y logging automático de cada request
+│   │   ├── main.py         # FastAPI: carga modelos al iniciar + sirve frontend
+│   │   ├── routes.py       # POST /predict (con preprocesamiento spaCy) + /health + WS
+│   │   ├── schemas.py      # Pydantic: IntentRequest, IntentResponse, HealthResponse
+│   │   └── middleware.py   # CORS + logging de requests
 │   │
 │   └── speech/
-│       ├── stt.py          # Speech-to-Text: recibe audio → devuelve texto transcrito
-│       └── tts.py          # Text-to-Speech: convierte respuesta del agente en audio
+│       ├── stt.py          # Speech-to-Text
+│       └── tts.py          # Text-to-Speech
 │
-├── frontend/               # Visor demo — HTML/CSS/JS puro, sin framework ni Node.js
-│   ├── index.html          # Interfaz: textarea + botón micrófono + panel de resultado
-│   ├── app.js              # Lógica: Web Speech API (voz→texto) +
-│   │                       # fetch POST /predict + renderiza resultado con confianza
-│   └── css/
-│       └── style.css       # Diseño oscuro del visor
+├── frontend/               # Visor demo — HTML/CSS/JS puro
+│   ├── index.html
+│   ├── app.js              # Web Speech API + fetch /predict + render resultado
+│   └── css/style.css
 │
-├── models/                 # Modelos serializados y resultados de entrenamiento
-│   ├── model01.pkl             # Pipeline SVM completo serializado con joblib
-│   ├── model02.pkl             # Pipeline MLP completo serializado con joblib
-│   ├── label_encoder.pkl       # Mapeo: índice entero ↔ nombre de intent
-│   ├── cv_results_model01.csv  # Resultados de cada combinación del GridSearchCV SVM
-│   ├── cv_results_model02.csv  # Resultados de cada combinación del GridSearchCV MLP
-│   ├── cv_results_nb.csv       # Resultados GridSearchCV Naive Bayes
-│   ├── model01_summary.csv     # Resumen: mejores parámetros y scores de model01
-│   ├── model02_summary.csv     # Resumen: mejores parámetros y scores de model02
-│   └── best_model01_name.txt   # Nombre del mejor clasificador: "SVM" o "NaiveBayes"
+├── models/                 # Modelos y resultados de entrenamiento
+│   ├── model01.pkl
+│   ├── model02.pkl
+│   ├── label_encoder.pkl
+│   ├── cv_results_model01.csv
+│   ├── cv_results_model02.csv
+│   ├── cv_results_nb.csv
+│   ├── model01_summary.csv
+│   ├── model02_summary.csv
+│   └── best_model01_name.txt
 │
 ├── tests/
-│   ├── conftest.py         # Fixtures compartidos: textos de prueba, labels, corpus mínimo
-│   ├── test_data.py        # Verifica schema JSONL, todos los intents presentes,
-│   │                       # sin textos vacíos, split con proporciones correctas
-│   ├── test_features.py    # Verifica TF-IDF, BoW, bigramas, NO data leakage,
-│   │                       # chi² reduce features, variance threshold elimina constantes
-│   ├── test_models.py      # Verifica pipelines SVM/NB/MLP se construyen,
-│   │                       # accuracy > 0.85, predict() devuelve intent válido
-│   └── test_api.py         # Verifica /predict devuelve 200, schema correcto,
-│                           # texto vacío devuelve 422, /health funciona
+│   ├── conftest.py
+│   ├── test_data.py
+│   ├── test_features.py
+│   ├── test_models.py
+│   └── test_api.py
 │
-├── .env.example            # Template de variables de entorno (copiar a .env)
-├── .gitignore              # Excluye: .venv/, .env, *.pkl, data/raw/*, htmlcov/
-├── CONTRIBUTING.md         # Guía para contribuir al proyecto
-├── Dockerfile              # Build multistage: builder (uv+deps) → runtime (solo lo necesario)
-├── docker-compose.yml      # Servicio "api" (producción) + "api-dev" (hot-reload para desarrollo)
-├── LICENSE                 # MIT
-├── Makefile                # Comandos de conveniencia: make install/data/train/api/test/docker
-├── pyproject.toml          # Deps + scripts CLI + config ruff/pytest/mypy (reemplaza requirements.txt)
-├── README.md               # Este archivo
-└── uv.lock                 # Lockfile reproducible — NO editar manualmente
+├── .env.example
+├── .gitignore
+├── CONTRIBUTING.md
+├── Dockerfile
+├── docker-compose.yml
+├── LICENSE
+├── Makefile
+├── pyproject.toml
+├── README.md
+└── uv.lock
 ```
 
 ---
 
 ## 🔄 Flujo de trabajo completo
 
-El proyecto sigue una metodología Data Science estructurada. Cada paso transforma los datos hasta llegar al modelo deployado.
-
 ### Paso 1 — Generación de datos sintéticos
-
-No había datos reales disponibles. Se generó el corpus usando dos LLMs para mayor diversidad:
 
 ```bash
 uv run python -m src.data.generator
 ```
 
-**`src/data/generator.py`** llama a:
-- **GROQ API** (LLaMA 3.3 70B, en la nube): genera 100 utterances/intent en 4 estilos rotando (variado, corto, largo)
-- **Mistral local** (Ollama): genera 50 utterances/intent adicionales con distinto vocabulario
-
-Resultado: `data/raw/intents_raw.jsonl` con ~1146 ejemplos en formato:
-```json
-{"text": "muéstrame las capas disponibles", "intent": "query_layer"}
-```
+Llama a GROQ API (LLaMA 3.3 70B) + Mistral local (Ollama) para generar ~1146 utterances.
+Resultado: `data/raw/intents_raw.jsonl`
 
 ### Paso 2 — Preprocesamiento
 
@@ -280,13 +273,8 @@ Resultado: `data/raw/intents_raw.jsonl` con ~1146 ejemplos en formato:
 uv run python -m src.data.preprocess
 ```
 
-**`src/data/preprocess.py`** aplica a cada utterance:
-1. Elimina numeración al inicio (`"18. texto"` → `"texto"`)
-2. Minúsculas
-3. Regex: elimina caracteres especiales, conserva letras con tildes y ñ
-4. spaCy `es_core_news_sm`: lematización + eliminación de stopwords
-
-Resultado: `data/interim/intents_clean.jsonl` con campos `text`, `text_raw`, `tokens`, `n_tokens`, `intent`.
+Aplica: numeración → minúsculas → regex → lematización spaCy → stopwords.
+Resultado: `data/interim/intents_clean.jsonl`
 
 ### Paso 3 — Split y codificación
 
@@ -294,93 +282,106 @@ Resultado: `data/interim/intents_clean.jsonl` con campos `text`, `text_raw`, `to
 uv run python -m src.data.dataset
 ```
 
-**`src/data/dataset.py`**:
-- `LabelEncoder`: convierte `"query_layer"` → `0`, ..., `"visualize_map"` → `7`
-- `train_test_split` con `stratify=y`: garantiza misma proporción de clases en train y test
-- Split: **80% train (~916 ejemplos)** / **20% test (~230 ejemplos)**
+LabelEncoder + split estratificado 80/20.
+Resultado: `data/processed/*.pkl` + `models/label_encoder.pkl`
 
-Resultado: 4 archivos `.pkl` en `data/processed/` + `label_encoder.pkl` en `models/`
-
-### Paso 4 — Feature Extraction y Feature Selection (en el pipeline)
-
-No se ejecutan como paso separado — están **dentro del pipeline sklearn** de cada modelo. Esto garantiza que el preprocesamiento de features respete el split train/test sin data leakage.
-
-`src/features/extraction.py` implementa BoW, TF-IDF y TF-IDF+ngrams para comparar en el notebook. `src/features/selection.py` implementa chi², mutual info y variance threshold como métodos filter.
-
-### Paso 5 — Entrenamiento de modelos
+### Paso 4 — Entrenamiento
 
 ```bash
 uv run python -m src.models.model01.train
 uv run python -m src.models.model02.train
 ```
 
-Ambos `train.py` siguen el mismo proceso:
-1. Cargan `X_train.pkl` y `y_train.pkl`
-2. Construyen el pipeline desde `model01.py` / `model02.py`
-3. **GridSearchCV** con `RepeatedStratifiedKFold(n_splits=10, n_repeats=10)` → 100 folds
-4. Guardan los resultados del CV en CSV para el notebook
-5. Generan y guardan la curva de aprendizaje en `reports/figures/`
-6. Evalúan en test set y muestran classification report + matriz de confusión
-7. Serializan el mejor pipeline con `joblib.dump()` → `models/model01.pkl`
+GridSearchCV + RepeatedKFold(10×10) para ambos modelos.
+Resultado: `models/model01.pkl`, `models/model02.pkl`, CSVs de resultados
 
-### Paso 6 — Despliegue de la API
+### Paso 5 — API
 
 ```bash
 uv run uvicorn src.api.main:app --reload --port 8000
 ```
 
-**`src/api/main.py`** al iniciar:
-- Carga `model01.pkl` y `model02.pkl` en memoria (evita latencia en la primera request)
-- Sirve `frontend/` como archivos estáticos en `localhost:8000/app`
+Disponible en `http://localhost:8000`
 
-**`src/api/routes.py`** en cada request a `POST /predict`:
-1. Recibe el texto del usuario
-2. Aplica `preprocess_text()` con spaCy (mismo pipeline que el entrenamiento)
-3. Llama a `predict(clean_text)` del modelo seleccionado
-4. Devuelve `{intent, confidence, agent, model, text}`
-
-> **¿Por qué el preprocesamiento en la API?**  
-> Los modelos fueron entrenados con texto preprocesado (lematizado, sin stopwords). Si la API enviara texto crudo, habría inconsistencia entre entrenamiento y producción — el modelo recibiría distribuciones de texto que nunca vio, bajando la confianza. Al aplicar el mismo preprocesamiento en la API, el F1 reportado en el notebook es válido en producción.
+> **¿Por qué el preprocesamiento en la API?**
+> Los modelos fueron entrenados con texto preprocesado. Si la API enviara texto crudo habría inconsistencia entre entrenamiento y producción. El mismo pipeline spaCy se aplica en `/predict` antes de clasificar, garantizando que el F1 reportado en el notebook sea válido en producción.
 
 ---
 
-## 🚀 Instalación
+## 🚀 Instalación y comandos
 
 ### Requisitos
 
 - Python 3.12
-- [uv](https://github.com/astral-sh/uv) — gestor de paquetes
-- GROQ API Key gratuita — [console.groq.com](https://console.groq.com)
-- Ollama (opcional, para generación local con Mistral)
+- [uv](https://github.com/astral-sh/uv)
+- GROQ API Key — [console.groq.com](https://console.groq.com)
+- Ollama (opcional) — [ollama.com](https://ollama.com)
 
-### Pasos
+### Setup inicial
 
 ```bash
-# 1. Clonar el repositorio
+# Clonar
 git clone https://github.com/tu-usuario/project-machine-learning.git
 cd project-machine-learning
 
-# 2. Crear entorno virtual con Python 3.12
+# Entorno virtual
 uv venv .venv --python 3.12
 
-# 3. Activar entorno
-# Windows:
+# Activar (Windows)
 .venv\Scripts\activate
-# Linux/macOS:
+# Activar (Linux/macOS)
 source .venv/bin/activate
 
-# 4. Instalar dependencias de producción
+# Instalar dependencias
 uv sync
 
-# 5. Instalar dependencias de desarrollo (tests, linting)
+# Dependencias de desarrollo (tests, linting)
 uv sync --extra dev
 
-# 6. Configurar variables de entorno
+# Variables de entorno
 cp .env.example .env
 # Editar .env: agregar GROQ_API_KEY=gsk_...
 
-# 7. Descargar modelo de español de spaCy (una sola vez)
+# Modelo spaCy (una sola vez)
 uv run python -m spacy download es_core_news_sm
+```
+
+### Comandos principales
+
+```bash
+# ── Pipeline completo de datos ──────────────────────────
+uv run python -m src.data.generator      # 1. Generar corpus con GROQ + Mistral
+uv run python -m src.data.preprocess     # 2. Limpiar y lematizar con spaCy
+uv run python -m src.data.dataset        # 3. Split 80/20 y guardar .pkl
+
+# ── Entrenamiento ───────────────────────────────────────
+uv run python -m src.models.model01.train   # Entrenar Model01 (SVM)
+uv run python -m src.models.model02.train   # Entrenar Model02 (MLP)
+
+# ── API ─────────────────────────────────────────────────
+uv run uvicorn src.api.main:app --reload --port 8000
+
+# ── Tests ───────────────────────────────────────────────
+uv run pytest                            # Todos los tests
+uv run pytest --cov=src                  # Con cobertura
+
+# ── Calidad de código ───────────────────────────────────
+uv run ruff check src/                   # Linting
+uv run ruff format src/                  # Formatear
+
+# ── Docker ──────────────────────────────────────────────
+docker compose up --build                # Producción
+docker compose --profile dev up --build  # Desarrollo (hot-reload)
+docker compose down                      # Detener
+
+# ── Makefile (atajos) ───────────────────────────────────
+make install      # setup completo
+make data         # genera + preprocesa + splitea
+make train        # entrena ambos modelos
+make api          # levanta la API
+make test         # corre tests
+make docker       # build y levanta Docker
+make clean        # limpia caches
 ```
 
 ---
@@ -402,7 +403,7 @@ data/processed/X_test.pkl           ← 20% textos para evaluar
 data/processed/y_train.pkl          ← labels enteros train
 data/processed/y_test.pkl           ← labels enteros test
          │  src/models/model0N/train.py
-         │  (Pipeline: TF-IDF → chi² → clasificador)
+         │  Pipeline: TF-IDF → chi² → clasificador
          ▼
 models/model01.pkl                  ← pipeline SVM serializado
 models/model02.pkl                  ← pipeline MLP serializado
@@ -410,9 +411,26 @@ models/model02.pkl                  ← pipeline MLP serializado
 
 ---
 
-## 🤖 Modelos
+## 🤖 Modelos y justificación
 
-### Model01 — Baseline (TF-IDF + chi² + SVM)
+### ¿Por qué dos modelos?
+
+Se implementan dos modelos con enfoques distintos para comparar estadísticamente su rendimiento (test de Wilcoxon) y elegir el mejor para producción.
+
+---
+
+### Model01 — Baseline: TF-IDF + chi² + SVM
+
+**¿Por qué SVM para clasificación de texto?**
+
+El SVM (Support Vector Machine) es el modelo clásico más efectivo para clasificación de texto por tres razones:
+1. **Funciona bien en alta dimensionalidad:** el espacio TF-IDF puede tener miles de features — SVM los maneja eficientemente
+2. **Margen máximo:** encuentra el hiperplano que maximiza la separación entre clases, siendo robusto con pocos datos
+3. **Velocidad:** `LinearSVC` es extremadamente rápido comparado con kernels no lineales o redes neuronales
+
+**¿Por qué también Naive Bayes?**
+
+Se incluye Naive Bayes como alternativa para seleccionar el mejor mediante comparación directa. NB es el baseline tradicional para clasificación de texto — si SVM no lo supera, no justifica su complejidad adicional.
 
 ```python
 Pipeline([
@@ -422,14 +440,29 @@ Pipeline([
 ])
 ```
 
-| Componente | Función |
-|-----------|---------|
-| `TfidfVectorizer` | Convierte texto en vector numérico, ponderando términos más informativos. `sublinear_tf=True` aplica `log(tf)` para reducir el efecto de términos muy frecuentes |
-| `SelectKBest(chi2)` | Selecciona los términos con mayor dependencia estadística con la clase (método filter) |
-| `LinearSVC` | Clasificador SVM lineal — encuentra el hiperplano óptimo en el espacio TF-IDF |
-| `CalibratedClassifierCV` | Calibra probabilidades del SVM (que nativamente no las tiene) mediante CV interna |
+| Componente | Por qué se usa |
+|-----------|----------------|
+| `TfidfVectorizer` | Convierte texto a vector numérico ponderando términos informativos. `sublinear_tf=True` aplica `log(tf)` reduciendo el peso de términos muy repetidos |
+| `ngram_range=(1,2)` | Captura bigramas como *"calcular área"* que son más discriminativos que palabras sueltas |
+| `SelectKBest(chi2)` | Filtra los términos estadísticamente más dependientes de la clase — reduce ruido antes del clasificador |
+| `LinearSVC` | SVM lineal optimizado para alta dimensionalidad — rápido y preciso en texto |
+| `CalibratedClassifierCV` | LinearSVC no tiene `predict_proba()` nativo — la calibración permite obtener el score de confianza |
 
-### Model02 — Avanzado (TF-IDF word+char + MLP)
+**Resultado:** F1-macro = 0.96 en test set ✅
+
+---
+
+### Model02 — Avanzado: TF-IDF (word+char) + MLP
+
+**¿Por qué MLP en lugar de transformers?**
+
+Con ~900 ejemplos de entrenamiento, los transformers (BERT, RoBERTa) tienden a hacer overfitting. Un MLP sobre features TF-IDF bien diseñadas es más eficiente y competitivo con datasets pequeños. Además, los transformers requieren GPU y torch — el MLP corre en CPU sin dependencias pesadas.
+
+**¿Por qué FeatureUnion con char n-grams?**
+
+La innovación de Model02 es combinar dos tipos de features en paralelo:
+- **word n-grams:** captura frases clave completas (`"exportar shapefile"`, `"calcular área"`)
+- **char n-grams:** captura patrones de caracteres (`"calc"`, `"expo"`, `"buff"`) — más robusto ante errores tipográficos y variaciones morfológicas
 
 ```python
 Pipeline([
@@ -443,13 +476,33 @@ Pipeline([
 ])
 ```
 
-| Componente | Función |
-|-----------|---------|
-| `FeatureUnion` | Combina en paralelo dos vectorizadores — concatena sus matrices de features |
-| `word_tfidf` | Captura n-grams de palabras: `"calcular área"`, `"exportar shapefile"` |
-| `char_tfidf` | Captura n-grams de caracteres: `"calc"`, `"expo"` — robusto ante errores tipográficos |
-| `MaxAbsScaler` | Normaliza las features entre -1 y 1 sin destruir la sparsidad — necesario para MLP |
-| `MLPClassifier` | Red neuronal densa con early stopping — para cuando la validación deja de mejorar |
+| Componente | Por qué se usa |
+|-----------|----------------|
+| `FeatureUnion` | Combina en paralelo ambos vectorizadores — el vector final es la concatenación de ambas matrices |
+| `char_wb n-grams (2,4)` | Captura morfología sin preprocesamiento — `"calcular"` y `"calculando"` comparten los mismos char n-grams |
+| `MaxAbsScaler` | Normaliza features entre -1 y 1 sin destruir la sparsidad — necesario porque MLP es sensible a la escala |
+| `MLPClassifier (256,128)` | Red neuronal densa de dos capas — aprende combinaciones no lineales de features |
+| `early_stopping=True` | Detiene el entrenamiento cuando la validación deja de mejorar — evita overfitting |
+
+**Resultado:** F1-macro = 0.88 en test set, pero **más robusto con texto crudo en producción** gracias a los char n-grams ✅
+
+---
+
+### Comparación de modelos
+
+| Criterio | Model01 (SVM) | Model02 (MLP) |
+|----------|--------------|--------------|
+| F1-macro test | **0.96** | 0.88 |
+| Velocidad entrenamiento | Muy rápido | Lento |
+| Robustez texto crudo | Baja | **Alta** |
+| Interpretabilidad | Alta | Media |
+| Memoria | Pequeña | Mayor |
+| **Uso recomendado** | Evaluación académica | **Producción** |
+
+**¿Por qué Model02 en producción?**
+Model01 gana en métricas pero fue evaluado con texto preprocesado (spaCy). Los char n-grams de Model02 hacen que sea más tolerante ante variaciones del usuario real. Aunque el preprocesamiento se aplica también en la API, Model02 ofrece mayor robustez como capa de seguridad adicional.
+
+---
 
 ### Optimización de hiperparámetros
 
@@ -483,12 +536,9 @@ study.optimize(objective, n_trials=40)
 ### Comparación estadística — Test de Wilcoxon (10×10 CV)
 
 ```
-Estadístico W : (resultado real del CV)
-p-valor       : < 0.05
-✓ Diferencia SIGNIFICATIVA — Model01 es estadísticamente superior
+p-valor < 0.05
+✓ Diferencia SIGNIFICATIVA — Model01 es estadísticamente superior en CV
 ```
-
-**Nota importante:** Model01 gana en condiciones controladas (texto preprocesado). Model02 es más robusto en producción con texto crudo gracias a los char n-grams. Se seleccionó **Model02 como modelo por defecto en producción**.
 
 ### Por intent — Model01
 
@@ -503,87 +553,44 @@ p-valor       : < 0.05
 | spatial_join | 1.00 | 0.94 | 0.97 |
 | visualize_map | 1.00 | 1.00 | 1.00 |
 
-> `query_layer` y `visualize_map` tienen menor F1 porque comparten vocabulario ("mostrar", "mapa", "capas"). Son los intents más difíciles de distinguir.
+> `query_layer` y `visualize_map` tienen menor F1 porque comparten vocabulario ("mostrar", "mapa", "capas").
 
 ---
 
 ## 🌐 API
 
-### Levantar
-
 ```bash
 uv run uvicorn src.api.main:app --reload --port 8000
 ```
 
-### Endpoints
-
-**`POST /predict`** — Clasifica una instrucción:
+**`POST /predict`:**
 ```bash
 curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
   -d '{"text": "muéstrame las capas disponibles", "model": "model02"}'
 ```
 ```json
-{
-  "intent": "query_layer",
-  "confidence": 0.9722,
-  "agent": "geo_agent",
-  "model": "model02",
-  "text": "muéstrame las capas disponibles"
-}
+{"intent": "query_layer", "confidence": 0.9722, "agent": "geo_agent", "model": "model02"}
 ```
 
-**`GET /health`** — Estado del servicio:
-```json
-{"status": "ok", "model01": true, "model02": true}
-```
+**`GET /health`:** `{"status": "ok", "model01": true, "model02": true}`
 
-**`WebSocket /speech`** — Voz en tiempo real:
-El browser transcribe audio con Web Speech API y envía el texto al WebSocket. La API clasifica y devuelve el intent.
+**`WebSocket /speech`:** voz → Web Speech API → texto → classify → intent
 
 ---
 
 ## 🖥️ Frontend
 
-Visor accesible en `http://localhost:8000/app`.
-
-FastAPI sirve `frontend/` como archivos estáticos con una sola línea:
-```python
-app.mount("/app", StaticFiles(directory="frontend", html=True))
-```
-
-Funcionalidades:
-- **Texto:** escribe cualquier instrucción y presiona Clasificar
-- **Voz:** botón micrófono usa Web Speech API nativa del browser (Chrome/Edge)
-- **Selector de modelo:** Model01 (SVM) o Model02 (MLP)
-- **Resultado:** intent, barra de confianza con color (verde/amarillo/rojo), agente y modelo
+Visor en `http://localhost:8000/app` — texto o voz, selector de modelo, resultado con confianza.
 
 ---
 
 ## 🐳 Docker
 
-### ¿Por qué Docker?
-
-Sin Docker, el proyecto depende de que el entorno local tenga exactamente Python 3.12, las mismas versiones de sklearn/spaCy y el mismo OS. Con Docker, todo eso está encapsulado en una imagen reproducible.
-
 ```bash
-# Cualquier persona puede levantar el proyecto completo con:
-docker compose up --build
-# → http://localhost:8000/app  (frontend)
-# → http://localhost:8000/docs (API)
-```
-
-### Build y levantar
-
-```bash
-# Producción
-docker compose up --build
-
-# Desarrollo (hot-reload)
-docker compose --profile dev up --build
-
-# Detener
-docker compose down
+docker compose up --build          # producción en localhost:8000
+docker compose --profile dev up    # desarrollo con hot-reload
+docker compose down                # detener
 ```
 
 ---
@@ -591,63 +598,58 @@ docker compose down
 ## 🧪 Tests
 
 ```bash
-# Todos los tests
-uv run pytest
-
-# Con cobertura HTML
-uv run pytest --cov=src --cov-report=html
+uv run pytest                      # 41/41 passed
+uv run pytest --cov=src            # con cobertura
 ```
-
-**Resultado: 41/41 tests passed**
 
 | Archivo | Qué verifica |
 |---------|-------------|
-| `test_data.py` | Schema JSONL correcto, todos los intents presentes, sin textos vacíos |
-| `test_features.py` | TF-IDF funciona, bigramas detectados, **no data leakage**, chi² reduce features |
-| `test_models.py` | Pipelines se construyen, accuracy > 0.85 en test, predict() devuelve intent válido |
-| `test_api.py` | /predict devuelve 200 con schema correcto, texto vacío devuelve 422 |
+| `test_data.py` | Schema JSONL, intents presentes, sin textos vacíos |
+| `test_features.py` | TF-IDF, bigramas, **no data leakage**, chi² |
+| `test_models.py` | Pipelines, accuracy > 0.85, predict() válido |
+| `test_api.py` | /predict 200, schema correcto, vacío → 422 |
 
 ---
 
 ## 📓 Notebook
 
-El análisis completo está en `notebooks/main.ipynb`. El notebook es un **reporte ejecutivo** — carga los datos y modelos ya generados sin reentrenar desde cero.
+`notebooks/main.ipynb` — reporte ejecutivo que carga datos y modelos ya generados.
 
 | Sección | Descripción |
 |---------|-------------|
-| **0. Setup** | Imports, paths, constantes e intents definidos |
-| **1. Introducción** | Problema, propuesta, arquitectura, tabla de intents |
-| **2. EDA** | Distribución de clases, longitud de utterances, top n-grams por intent |
-| **3. Preprocesamiento** | Ejemplos antes/después de limpieza con spaCy |
-| **4. Feature Extraction** | Comparación BoW vs TF-IDF vs TF-IDF+n-grams con tabla de vocabulario y densidad |
-| **5. Pipelines** | Definición de los 3 pipelines sklearn con justificación de cada componente |
-| **6. Optimización** | GridSearchCV real (desde CSV) + gráfica F1 vs λ + curvas de aprendizaje + Optuna |
-| **7. Comparación estadística** | Wilcoxon 10×10 + boxplot de scores + diferencia por fold |
-| **8. Evaluación** | Classification report + matrices de confusión de ambos modelos |
-| **9. t-SNE** | Espacio de features TF-IDF en 2D con colores por intent |
-| **10. Conclusiones** | Análisis de resultados, limitaciones y recomendaciones |
-| **11. Referencias** | IEEE + prompts de IA usados como comentarios Python |
+| 0. Setup | Imports, paths, constantes |
+| 1. Introducción | Problema, propuesta, tabla de intents |
+| 2. EDA | Distribución, longitud, n-grams por intent |
+| 3. Preprocesamiento | Ejemplos antes/después de spaCy |
+| 4. Feature Extraction | BoW vs TF-IDF vs TF-IDF+n-grams |
+| 5. Pipelines | Definición y justificación de los 3 pipelines |
+| 6. Optimización | GridSearchCV + F1 vs λ + curvas de aprendizaje + Optuna |
+| 7. Comparación estadística | Wilcoxon 10×10 + boxplot |
+| 8. Evaluación | Classification report + matrices de confusión |
+| 9. t-SNE | Espacio de features en 2D |
+| 10. Conclusiones | Resultados, limitaciones, recomendaciones |
+| 11. Referencias | IEEE + prompts de IA |
 
 ---
 
 ## 📚 Referencias
 
-**[1]** F. Pedregosa et al., "Scikit-learn: Machine Learning in Python," *Journal of Machine Learning Research*, vol. 12, pp. 2825–2830, 2011.
+**[1]** F. Pedregosa et al., "Scikit-learn: Machine Learning in Python," *JMLR*, vol. 12, pp. 2825–2830, 2011.
 
 **[2]** G. Salton and C. Buckley, "Term-weighting approaches in automatic text retrieval," *Information Processing & Management*, vol. 24, no. 5, pp. 513–523, 1988.
 
 **[3]** C. Cortes and V. Vapnik, "Support-vector networks," *Machine Learning*, vol. 20, no. 3, pp. 273–297, 1995.
 
-**[4]** L. Van der Maaten and G. Hinton, "Visualizing Data using t-SNE," *Journal of Machine Learning Research*, vol. 9, pp. 2579–2605, 2008.
+**[4]** L. Van der Maaten and G. Hinton, "Visualizing Data using t-SNE," *JMLR*, vol. 9, pp. 2579–2605, 2008.
 
-**[5]** T. Akiba et al., "Optuna: A Next-generation Hyperparameter Optimization Framework," in *Proc. KDD*, 2019. [Online]. Available: https://optuna.org
+**[5]** T. Akiba et al., "Optuna: A Next-generation Hyperparameter Optimization Framework," *KDD*, 2019. https://optuna.org
 
-**[6]** Explosion AI, "spaCy: Industrial-strength NLP," 2023. [Online]. Available: https://spacy.io
+**[6]** Explosion AI, "spaCy: Industrial-strength NLP," 2023. https://spacy.io
 
-**[7]** GROQ Inc., "GROQ API Documentation," 2024. [Online]. Available: https://console.groq.com/docs
+**[7]** GROQ Inc., "GROQ API Documentation," 2024. https://console.groq.com/docs
 
 **[8]** F. Wilcoxon, "Individual Comparisons by Ranking Methods," *Biometrics Bulletin*, vol. 1, no. 6, pp. 80–83, 1945.
 
-**[9]** Astral, "uv — An extremely fast Python package manager," 2024. [Online]. Available: https://github.com/astral-sh/uv
+**[9]** Astral, "uv — An extremely fast Python package manager," 2024. https://github.com/astral-sh/uv
 
 **[10]** J. Manning, P. Raghavan, and H. Schütze, *Introduction to Information Retrieval*. Cambridge University Press, 2008.
