@@ -12,8 +12,8 @@
 
 ## 👤 Autor
 
-**Oldrin Santiago Bonilla Cáceres**  
-Maestrante en Ciencia de Datos  
+**Oldrin Bonilla Cáceres**  
+Maestrante en Ciencia de Dato - USFQ  
 Curso: Machine Learning (Aprendizaje de Máquina) — 2026
 
 ---
