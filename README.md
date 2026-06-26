@@ -12,8 +12,8 @@
 
 ## 👤 Autor
 
-**Oldrin Bonilla Cáceres**  
-Maestrante en Ciencia de Dato - USFQ  
+**Oldrin Santiago Bonilla Cáceres**  
+Maestrante en Ciencia de Datos  
 Curso: Machine Learning (Aprendizaje de Máquina) — 2026
 
 ---
@@ -22,6 +22,7 @@ Curso: Machine Learning (Aprendizaje de Máquina) — 2026
 
 - [Descripción del problema](#-descripción-del-problema)
 - [Arquitectura](#-arquitectura)
+- [Integración con ArcGIS](#-integración-con-arcgis)
 - [Decisiones técnicas](#-decisiones-técnicas)
 - [Estructura del proyecto](#-estructura-del-proyecto)
 - [Flujo de trabajo completo](#-flujo-de-trabajo-completo)
@@ -96,6 +97,110 @@ Usuario (texto o voz)
 
 ---
 
+## 🗺️ Integración con ArcGIS
+
+El clasificador fue diseñado para integrarse en una arquitectura multiagente con ArcGIS. El intent detectado puede usarse directamente para ejecutar operaciones GIS mediante `arcpy` o la ArcGIS API for Python.
+
+### Arquitectura multiagente completa
+
+```
+Usuario (voz o texto)
+        ↓
+Geo-Intent Classifier  ← este proyecto
+        ↓
+   geo_agent (ArcGIS)
+        ↓
+┌───────────────────────────────────────────────────────────────────┐
+│  query_layer     → ArcGIS REST API (listar feature layers)        │
+│  spatial_filter  → SelectLayerByLocation / SelectLayerByAttribute │
+│  calculate_area  → CalculateGeometryAttributes                    │
+│  get_attributes  → Describe / ListFields                          │
+│  export_data     → FeatureClassToFeatureClass / CopyFeatures      │
+│  visualize_map   → ApplySymbology / UpdateLayer                   │
+│  spatial_join    → SpatialJoin                                    │
+│  buffer_analysis → Buffer / MultipleRingBuffer                    │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+### Opción 1 — ArcGIS Pro + arcpy
+
+ArcGIS Pro tiene un entorno Python propio. El modelo puede cargarse directamente dentro de un script de geoprocesamiento:
+
+```python
+import arcpy
+import joblib
+
+model = joblib.load("models/model02.pkl")
+le    = joblib.load("models/label_encoder.pkl")
+
+def clasificar_instruccion(texto: str) -> str:
+    idx    = model.predict([texto])[0]
+    return le.inverse_transform([idx])[0]
+
+# El usuario escribe → clasifica → ejecuta la operación GIS
+intent = clasificar_instruccion("calcula el área de los parques")
+
+if intent == "calculate_area":
+    arcpy.CalculateGeometryAttributes_management(...)
+elif intent == "spatial_filter":
+    arcpy.SelectLayerByLocation_management(...)
+elif intent == "buffer_analysis":
+    arcpy.Buffer_analysis(...)
+elif intent == "export_data":
+    arcpy.FeatureClassToFeatureClass_conversion(...)
+```
+
+### Opción 2 — ArcGIS API for Python + FastAPI
+
+La API REST que ya está construida puede consumirse desde cualquier notebook de ArcGIS Online o ArcGIS Notebooks:
+
+```python
+import requests
+from arcgis.gis import GIS
+from arcgis.geometry import buffer
+
+gis = GIS("https://www.arcgis.com", "usuario", "contraseña")
+
+def geo_agent(instruccion: str):
+    # 1. Clasificar intent via API
+    response = requests.post(
+        "http://tu-servidor:8000/predict",
+        json={"text": instruccion, "model": "model02"}
+    )
+    intent     = response.json()["intent"]
+    confidence = response.json()["confidence"]
+
+    print(f"Intent: {intent} ({confidence:.0%} confianza)")
+
+    # 2. Ejecutar operación según intent
+    if intent == "buffer_analysis":
+        return buffer(feature_layer, distance=500, unit="meters")
+    elif intent == "spatial_join":
+        return arcgis.features.SpatialJoin(target, join_layer)
+    elif intent == "export_data":
+        feature_layer.export_to_csv("output.csv")
+    # ...
+
+# Uso
+geo_agent("crea un buffer de 500 metros alrededor de las escuelas")
+# → Intent: buffer_analysis (97% confianza)
+# → Ejecuta Buffer_analysis en ArcGIS
+```
+
+### Opción 3 — Widget en ArcGIS Experience Builder
+
+El frontend (`index.html` + `app.js`) puede embeberse como widget personalizado en Experience Builder, conectándose a la API FastAPI para clasificar instrucciones y ejecutar operaciones en el mapa web en tiempo real.
+
+### Lo que ya está listo para la integración
+
+- ✅ Clasificador entrenado y deployado como API REST
+- ✅ WebSocket para voz en tiempo real
+- ✅ Docker para desplegar en servidor accesible desde ArcGIS Online
+- ✅ Endpoint `/predict` que devuelve el intent en formato JSON consumible por cualquier cliente
+- ⬅ Pendiente: implementar el agente GIS que recibe el intent y ejecuta `arcpy` / ArcGIS API
+
+---
+
 ## ⚙️ Decisiones técnicas
 
 ### ¿Qué es TF-IDF?
@@ -115,7 +220,7 @@ El resultado es una **matriz numérica** donde cada fila es un utterance y cada 
 Con `ngram_range=(1,2)` también captura **bigramas** — pares de palabras consecutivas:
 
 ```
-"calcular área" → una sola feature que distingue calculate_area de otros intents
+"calcular área"     → una sola feature que distingue calculate_area de otros intents
 "exportar shapefile" → feature única de export_data
 ```
 
@@ -423,7 +528,8 @@ Se implementan dos modelos con enfoques distintos para comparar estadísticament
 
 **¿Por qué SVM para clasificación de texto?**
 
-El SVM (Support Vector Machine) es el modelo clásico más efectivo para clasificación de texto por tres razones:
+El SVM (Support Vector Machine) es un algoritmo de **aprendizaje supervisado** — necesita las etiquetas de intent durante el entrenamiento para aprender a separar las clases. Es el modelo clásico más efectivo para clasificación de texto por tres razones:
+
 1. **Funciona bien en alta dimensionalidad:** el espacio TF-IDF puede tener miles de features — SVM los maneja eficientemente
 2. **Margen máximo:** encuentra el hiperplano que maximiza la separación entre clases, siendo robusto con pocos datos
 3. **Velocidad:** `LinearSVC` es extremadamente rápido comparado con kernels no lineales o redes neuronales
@@ -456,7 +562,7 @@ Pipeline([
 
 **¿Por qué MLP en lugar de transformers?**
 
-Con ~900 ejemplos de entrenamiento, los transformers (BERT, RoBERTa) tienden a hacer overfitting. Un MLP sobre features TF-IDF bien diseñadas es más eficiente y competitivo con datasets pequeños. Además, los transformers requieren GPU y torch — el MLP corre en CPU sin dependencias pesadas.
+El MLP también es **aprendizaje supervisado** — aprende ajustando sus pesos para minimizar el error entre la predicción y la etiqueta real. Con ~900 ejemplos de entrenamiento, los transformers (BERT, RoBERTa) tienden a hacer overfitting. Un MLP sobre features TF-IDF bien diseñadas es más eficiente y competitivo con datasets pequeños. Además, los transformers requieren GPU y torch — el MLP corre en CPU sin dependencias pesadas.
 
 **¿Por qué FeatureUnion con char n-grams?**
 
@@ -492,6 +598,7 @@ Pipeline([
 
 | Criterio | Model01 (SVM) | Model02 (MLP) |
 |----------|--------------|--------------|
+| Tipo de aprendizaje | Supervisado | Supervisado |
 | F1-macro test | **0.96** | 0.88 |
 | Velocidad entrenamiento | Muy rápido | Lento |
 | Robustez texto crudo | Baja | **Alta** |
@@ -653,3 +760,7 @@ uv run pytest --cov=src            # con cobertura
 **[9]** Astral, "uv — An extremely fast Python package manager," 2024. https://github.com/astral-sh/uv
 
 **[10]** J. Manning, P. Raghavan, and H. Schütze, *Introduction to Information Retrieval*. Cambridge University Press, 2008.
+
+**[11]** Esri, "ArcGIS API for Python Documentation," 2024. [Online]. Available: https://developers.arcgis.com/python/
+
+**[12]** Esri, "ArcPy Documentation," 2024. [Online]. Available: https://pro.arcgis.com/en/pro-app/arcpy/get-started/what-is-arcpy-.htm
